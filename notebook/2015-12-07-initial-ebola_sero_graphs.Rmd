@@ -5,8 +5,10 @@ date: 2015-12-07
 notebook: ebola-seasonality
 output:
   html_document:
-    keep_figs: yes
+    keep_md: yes
 ---
+
+First looks at the Ebola Serology data
   
 ```{r setup, include = FALSE}
 library(readxl)
