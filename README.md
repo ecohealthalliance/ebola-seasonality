@@ -3,10 +3,8 @@
 This is a repo for EHA work on modeling the seasonality of ebola in Bangladesh.
 Current focus is:
 
--   Using current 
--   Understanding how camel trade influences MERS dynamics
--   Evaluating whether MERS is sustainable in camel populations or requires
-    repreated spill-over from another reservoir to be maintained
+-   Using current serology data to describe seasonality in bats
+-   Parameterizing and simulating an SIR model
 
 # Project organization:
 
@@ -17,11 +15,12 @@ Current focus is:
 ## File organization
 
 -  `notebook`: Short analyses, drafts and write-ups (preferred format 
-   markdown/R-markdown)
--  `R`: for R code to be used or re-used
+   markdown/R-markdown and R scripts)
 -  `data`:  Raw data, not to be modified directly.  If you place something in 
    this folder, please put a description with appropirate links and metadata in 
    that folder's `README.md` file.
+-   `R` contains code that is re-used in multiple analyses, such as data-loading
+    and cleaning functions.
 -  `papers`:  PDFs of relevant papers, and eventually a store of citations for 
    write-ups
-- `documents`: Other write-ups and relevant documents for review
+- `inst`: Other write-ups and relevant documents for review

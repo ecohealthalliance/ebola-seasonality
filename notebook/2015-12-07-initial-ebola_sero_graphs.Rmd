@@ -1,0 +1,155 @@
+---
+title: "First Graphs: Ebola-GP in Bats in Bangladesh"
+author: "Noam Ross"
+date: 2015-12-07
+notebook: ebola-seasonality
+output:
+  html_document:
+    keep_figs: yes
+---
+  
+```{r setup, include = FALSE}
+library(readxl)
+library(readr)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(stringi)
+library(assertr)
+library(ggplot2)
+library(noamtools)
+library(scales)
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, fig.width = 10)
+library(viridis)
+```
+
+
+```{r loaddata, include = FALSE}
+# Load in and reshape the data
+
+source('../R/process_sheet.R') #load the sheet-processing function
+raw_xl = '../data/P giganteus Filo serology_ARW_NR_JE_ARW_12.11.xls'
+data_sheets = excel_sheets(raw_xl) %>%`[`(stri_detect_regex(., "\\d{4}")) %>% `[`(stri_detect_regex(., "Faridpur"))
+data_list = lapply(data_sheets, process_sheet, excel_file = raw_xl)
+bat_serol = bind_rows(data_list) %>%
+  gather("antibody", "luminex_val", matches("(sg|sf|vn|gp|_scale)$")) %>%
+  mutate(tmp = ifelse(stri_detect_fixed(antibody, '_scale'), 'sero', 'luminex'),
+         antibody = stri_replace_first_fixed(antibody, '_scale', '')) %>%
+  spread(tmp, luminex_val) %>%
+  mutate(luminex = as.numeric(luminex))
+
+#  Use only ebola data, calculate seroprevalence
+
+filtered_averaged = bat_serol %>%
+  filter(antibody == "ebolagp") %>%
+  group_by(collection_month, year) %>%
+  mutate(collection_date = round_date(mean(date_corrected), "day")) %>%
+  group_by() %>%
+  #  mutate(age_class = ifelse(age_class == "preweaned", "juvenile", age_class)) %>%
+  filter(age_class != "preweaned") %>%
+  filter(!is.na(age_class)) %>%
+  group_by(collection_date, age_class) %>%
+  summarize(count = sum(!is.na(sero)),
+            sero_pos = sum((sero != "neg") & !is.na(sero)),
+            seroprevalence = sero_pos/count,
+            sero_err = sqrt((seroprevalence*(1-seroprevalence))/count))
+  
+```
+
+```{r serotimeplot, echo =FALSE}
+ggplot(filtered_averaged, aes(x = collection_date, col=age_class, y=seroprevalence, fill = age_class,
+                ymax = seroprevalence + 2*sero_err, ymin = seroprevalence - 2*sero_err,
+       label = strftime(collection_date, format = "%d %b", tz = "UTC" ))) +
+  #geom_errorbar() +
+  geom_ribbon(alpha = 0.25, col=NA) +
+  geom_point() +
+  geom_line() +
+  geom_text(size = 3, col="darkgrey", vjust = -3) +
+  scale_x_datetime(labels = date_format("%d %b %y"), breaks = pretty_breaks(24), expand = c(0,0)) +
+  facet_wrap(~age_class, ncol = 1) + 
+  theme(axis.text.x = element_text(angle=90)) +
+  theme_nr
+```
+
+
+```{r birth_seasonality_plot, fig.height=12}
+birth_seas = bat_serol %>%
+  group_by(collection_month, year) %>% 
+  mutate(collection_date = round_date(mean(date_corrected), "day")) %>% 
+  group_by() %>%
+  #filter(!(is.na(pregnant) | is.na(lactating) | is.na(pup)) & sex == "F") %>% 
+  group_by(collection_date) %>%
+  rename(carrying_pup = pup) %>% 
+  mutate(is_juvenile = (age_class %in% c("juvenile", "preweaned"))) %>% 
+  gather("var","val", pregnant, lactating, carrying_pup, is_juvenile) %>% 
+  group_by(collection_date, var) %>% 
+  summarize(count = n(),
+            fraction = sum(val) / count,
+            std_err = sqrt((fraction*(1-fraction))/count)) %>% 
+  mutate(yr = as.character(year(collection_date)))
+
+  birth_seas$day_of_yr = as.POSIXct("2006-01-01")
+  yday(birth_seas$day_of_yr) <- yday(birth_seas$collection_date)
+                 
+ggplot(filter(birth_seas, var != "is_juvenile"), aes(x = day_of_yr, y = fraction, 
+                       ymin = fraction - 2*std_err, ymax = fraction + 2*std_err,
+                       col = yr, fill = yr)) +
+  geom_ribbon(alpha = 0.15, col = NA) +
+  scale_x_datetime(breaks = date_breaks(width = "1 months"), labels = date_format("%b")) +
+  geom_point() +
+  xlab("Collection Period") +
+  ylab("Fraction of Females") +
+  geom_line() +
+  facet_wrap(~var, ncol = 1) +
+  theme_nr +
+  ggtitle("Indicators of Variation in Birth Seasonality")
+```
+
+```{r juv_adult_ratios_seasonality_plot, fig.height = 7}
+ggplot(filter(birth_seas, var == "is_juvenile"), aes(x = day_of_yr, y = fraction, 
+                       ymin = fraction - 2*std_err, ymax = fraction + 2*std_err,
+                       col = yr, fill = yr)) +
+  geom_ribbon(alpha = 0.05, col = NA) +
+  scale_x_datetime(breaks = date_breaks(width = "1 months"), labels = date_format("%b")) +
+  geom_point() +
+  xlab("Collection Period") +
+  ylab("Fraction of all Bats Collected") +
+  geom_line() +
+  theme_nr +
+  ggtitle("Indicators of Variation in Birth Seasonality: Fraction Juveniles")
+```
+
+```{r luminex_plots, fig.height = 12}
+serol = bat_serol %>%
+  filter(antibody == "ebolagp") %>% 
+  group_by(collection_month, year) %>% 
+  filter(!all(is.na(luminex))) %>% 
+  mutate(collection_date = round_date(mean(date_corrected), "day")) %>% 
+  group_by() %>% 
+  mutate(age_class = ifelse(age_class == "preweaned", "juvenile", age_class)) %>% 
+  filter(!is.na(age_class)) %>% 
+  group_by(collection_date, age_class)
+
+#serol %>% filter(ageclass == "juvenile")
+
+# ggplot(serol, aes(x = log(luminex), fill = age_class)) +
+#   geom_histogram() +
+#   facet_grid(age_class~collection_date)
+
+serol %>% filter(!((age_class == "juvenile" & weight_g > 600) | (age_class == "adult" & weight_g < 250))) %>% 
+  ggplot(aes(x = weight_g, y = log(luminex), alpha = age_class)) +
+  geom_point(aes(fill = as.factor(month(collection_date, label = TRUE))), size = 4, shape = 21, color = "black") +
+  geom_smooth(method = "loess", size = 1, alpha = 0.4, mapping = aes(group = age_class), fill = viridis(12)[2], color = viridis(11)[2]) + 
+  theme_nr +
+  #scale_fill_viridis(discrete = TRUE) +
+  scale_fill_manual(values = viridis(11)[c(2:1, 11:3)]) +
+  scale_alpha_manual(values = c(0.25, 1)) +
+  ggtitle("Ebola-GP Luminosity by Bat Weight and Time of Year")
+  
+
+
+serol %>% filter(age_class == "juvenile") %>% 
+  ggplot(aes(x = yday(collection_date), y = log(luminex))) + geom_point() + geom_smooth(method="loess") + theme_nr +
+  ggtitle("luminex for Ebola GP in juvenile bats by day of the year")
+```
